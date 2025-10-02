@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JS-DOS</title>
+    
+    <style>
+        :root {
+            --black: #000000;
+            --green: #65ff14;
+        }
+        html, body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--black);
+            color: var(--green);
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 20px;
+        }
+        #terminal {
+            padding: 10px;
+        }
+        .output-line {
+            white-space: pre-wrap;
+        }
+        .input-line {
+            display: flex;
+            align-items: center;
+            height: 1.2em;
+        }
+        .prompt {
+            flex-shrink: 0;
+        }
+        .input-text {
+            padding-right: 1ch;
+            white-space: pre;
+        }
+        #cursor {
+            display: inline-block;
+            background-color: var(--green);
+            width: 1ch;
+            height: 1.2em;
+            animation: blink 1s step-end infinite;
+            margin-left: -1ch;
+        }
+        @keyframes blink {
+            from, to { background-color: transparent; }
+            50% { background-color: var(--green); }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="terminal">
+        <div class="input-line">
+            <span class="prompt">C:\></span>
+            <span id="input-buffer" class="input-text"></span>
+            <span id="cursor"></span>
+        </div>
+    </div>
+
+    <script>
+        // These are global so external scripts can access them
+        const programs = {}; 
+        const terminal = {
+            print: (message) => {},
+            clear: () => {},
+        };
+    </script>
+
+    <script src="hello.js"></script>
+    <script src="about.js"></script>
+    <script src="tetris.js"></script>
+    
+    <script src="main.js"></script>
+
+</body>
+</html>
