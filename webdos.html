@@ -1,0 +1,1021 @@
+<!DOCTYPE html>
+<html lang="no">
+
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>WEB-DOS</title>
+	<style>
+		:root {
+			--black: #000000;
+			--green: var(--green-7);
+			--green-0: #051a00;
+			--green-1: #133b03;
+			--green-2: #215b06;
+			--green-3: #2e7c09;
+			--green-4: #3c9d0b;
+			--green-5: #4ab50e;
+			--green-6: #58de11;
+			--green-7: #65ff14;
+		}
+
+		html,
+		body {
+			margin: 0;
+			padding: 0;
+			background-color: var(--black);
+			color: var(--green);
+			font-family: 'Courier New', Courier, monospace;
+			font-size: 20px;
+		}
+
+		#terminal {
+			padding: 10px;
+		}
+
+		.output-line {
+			white-space: pre-wrap;
+		}
+
+		.input-line {
+			display: flex;
+			align-items: center;
+			height: 1.2em;
+		}
+
+		.prompt {
+			flex-shrink: 0;
+		}
+
+		.input-text {
+			padding-right: 1ch;
+			white-space: pre;
+		}
+
+		#cursor {
+			display: inline-block;
+			background-color: var(--green);
+			width: 1ch;
+			height: 0.9em;
+			animation: blink 1s step-end infinite;
+			margin-left: -1ch;
+			margin-bottom: 0.2ch;
+		}
+
+		@keyframes blink {
+
+			from,
+			to {
+				background-color: transparent;
+			}
+
+			50% {
+				background-color: var(--green);
+			}
+		}
+	</style>
+</head>
+
+<body>
+	<div id="terminal">
+		<div class="input-line">
+			<span class="prompt">C:\></span>
+			<span id="input-buffer" class="input-text"></span>
+			<span id="cursor"></span>
+		</div>
+	</div>
+	<script>
+		// ===================================================================================
+		//
+		//  PROGRAM-BIBLIOTEK
+		//  Lim inn nye, selvstendige programmer i denne seksjonen.
+		//  Systemet vil automatisk registrere dem.
+		//
+		// ===================================================================================
+		const SystemPrograms = [];
+		// <--- PROGRAMDEFINISJONER (Lim inn nye programmer nedenfor) --->
+		// -------- START PROGRAM: OM --------
+		const omProgram = {
+			name: 'om',
+			program: {
+				description: 'Skriver ut informasjon om dette systemet.',
+				execute: async (term) => {
+					term.print("WEB-DOS [Versjon 1.0]");
+					term.print("(c) 2025. Et selvstendig terminalmiljø.");
+				}
+			}
+		};
+		SystemPrograms.push(omProgram);
+		// -------- SLUTT PROGRAM: OM --------
+		// -------- START PROGRAM: FARGER --------
+		const fargerProgram = {
+			name: 'farger',
+			program: {
+				description: 'Viser alle 8 fargene i systempaletten.',
+				execute: async (term) => {
+					term.print('--- Test av systemets 8-fargers palett ---');
+					for (let i = 0; i <= 7; i++) {
+						const colorVar = `var(--green-${i})`;
+						term.print(`Eksempeltekst i --green-${i}`, { color: colorVar });
+					}
+					term.print('--- Slutt på palett ---', {
+						color: 'var(--black)',
+						backgroundColor: 'var(--green-7)'
+					});
+				}
+			}
+		};
+		SystemPrograms.push(fargerProgram);
+		// -------- SLUTT PROGRAM: FARGER --------
+		// -------- START PROGRAM: TETRIS --------
+		const tetrisProgram = {
+			name: 'tetris',
+			program: {
+				description: 'Et klassisk blokk-stable-spill.',
+				execute: async (term) => {
+					return new Promise(resolve => {
+						const BOARD_WIDTH = 10, BOARD_HEIGHT = 20, SCORES_KEY = 'webdos_tetris_highscores';
+						const COLORS = { BORDER: 'var(--green-4)', SCORE_TEXT: 'var(--green-6)', LOCKED_PIECE: 'var(--green-5)', GHOST_PIECE: 'var(--green-3)', ACTIVE_PIECE: 'var(--green-7)', GAME_OVER: 'var(--green-7)' };
+						const PIECES = { 'I': [[1, 1, 1, 1]], 'O': [[1, 1], [1, 1]], 'T': [[0, 1, 0], [1, 1, 1]], 'L': [[0, 0, 1], [1, 1, 1]], 'J': [[1, 0, 0], [1, 1, 1]], 'S': [[0, 1, 1], [1, 1, 0]], 'Z': [[1, 1, 0], [0, 1, 1]] };
+						const PIECE_TYPES = 'IOTLJSZ';
+						let board, score, lines, gameOver, currentPiece, nextPiece, gameLoopId, gameState = 'start';
+						const inputLine = document.querySelector('.input-line');
+						const getHighScores = () => { try { const scores = localStorage.getItem(SCORES_KEY); return scores ? JSON.parse(scores) : []; } catch (e) { return []; } };
+						const saveHighScore = (newScore) => { if (newScore === 0) return; const scores = getHighScores(); scores.push({ score: newScore, date: new Date().toLocaleDateString() }); scores.sort((a, b) => b.score - a.score); localStorage.setItem(SCORES_KEY, JSON.stringify(scores.slice(0, 10))); };
+						const exitGame = (message) => {
+							if (gameLoopId) cancelAnimationFrame(gameLoopId);
+							document.removeEventListener('keydown', masterInputHandler, { capture: true });
+							term.clear();
+							if (message) term.print(message);
+							inputLine.style.display = 'flex';
+							resolve();
+						};
+						const createEmptyBoard = () => Array.from({ length: BOARD_HEIGHT }, () => Array(BOARD_WIDTH).fill(0));
+						const spawnPiece = () => { currentPiece = nextPiece; const type = PIECE_TYPES[Math.floor(Math.random() * PIECE_TYPES.length)]; nextPiece = { shape: PIECES[type], x: Math.floor(BOARD_WIDTH / 2) - 1, y: 0 }; if (checkCollision(currentPiece.shape, currentPiece.x, currentPiece.y)) { gameOver = true; } };
+						const checkCollision = (shape, x, y) => { for (let row = 0; row < shape.length; row++) { for (let col = 0; col < shape[row].length; col++) { if (shape[row][col]) { let boardX = x + col; let boardY = y + row; if (boardX < 0 || boardX >= BOARD_WIDTH || boardY >= BOARD_HEIGHT || (boardY >= 0 && board[boardY][boardX])) { return true; } } } } return false; };
+						const rotatePiece = () => { const shape = currentPiece.shape; const newShape = shape[0].map((_, colIndex) => shape.map(row => row[colIndex]).reverse()); if (!checkCollision(newShape, currentPiece.x, currentPiece.y)) { currentPiece.shape = newShape; } };
+						const lockPiece = () => { currentPiece.shape.forEach((row, y) => { row.forEach((value, x) => { if (value && (currentPiece.y + y) >= 0) { board[currentPiece.y + y][currentPiece.x + x] = 1; } }); }); };
+						const clearLines = () => { let linesCleared = 0; for (let y = BOARD_HEIGHT - 1; y >= 0; y--) { if (board[y].every(cell => cell !== 0)) { linesCleared++; board.splice(y, 1); board.unshift(Array(BOARD_WIDTH).fill(0)); y++; } } if (linesCleared > 0) { lines += linesCleared; score += (linesCleared * 100) * linesCleared; } };
+						const getGhostPosition = () => { let ghostY = currentPiece.y; while (!checkCollision(currentPiece.shape, currentPiece.x, ghostY + 1)) { ghostY++; } return ghostY; };
+						const draw = () => {
+							term.clear();
+							const ghostY = getGhostPosition();
+							const outputBuffer = [];
+							outputBuffer.push(`<span style="color:${COLORS.BORDER}">╔${'══'.repeat(BOARD_WIDTH)}╗</span>`);
+							for (let y = 0; y < BOARD_HEIGHT; y++) {
+								let line = `<span style="color:${COLORS.BORDER}">║</span>`;
+								for (let x = 0; x < BOARD_WIDTH; x++) {
+									const pieceX = x - currentPiece.x, pieceY = y - currentPiece.y, ghostPieceY = y - ghostY;
+									if (pieceY >= 0 && pieceY < currentPiece.shape.length && pieceX >= 0 && pieceX < currentPiece.shape[pieceY].length && currentPiece.shape[pieceY][pieceX]) {
+										line += `<span style="color:${COLORS.ACTIVE_PIECE}">██</span>`;
+									} else if (ghostPieceY >= 0 && ghostPieceY < currentPiece.shape.length && pieceX >= 0 && pieceX < currentPiece.shape[ghostPieceY].length && currentPiece.shape[ghostPieceY][pieceX]) {
+										line += `<span style="color:${COLORS.GHOST_PIECE}">░░</span>`;
+									} else if (board[y][x]) {
+										line += `<span style="color:${COLORS.LOCKED_PIECE}">▓▓</span>`;
+									} else { line += '  '; }
+								}
+								line += `<span style="color:${COLORS.BORDER}">║</span>`;
+								outputBuffer.push(line);
+							}
+							outputBuffer.push(`<span style="color:${COLORS.BORDER}">╚${'══'.repeat(BOARD_WIDTH)}╝</span>`);
+							outputBuffer.push(`<span style="color:${COLORS.SCORE_TEXT}">  Poeng: ${score}   Linjer: ${lines}</span>`);
+							outputBuffer.push(`<span style="color:${COLORS.SCORE_TEXT}">  Neste:</span>`);
+							if (nextPiece && nextPiece.shape) {
+								nextPiece.shape.forEach(row => {
+									const nextPieceLine = '  ' + row.map(cell => cell ? '██' : '  ').join('');
+									outputBuffer.push(`<span style="color:${COLORS.ACTIVE_PIECE}">${nextPieceLine}</span>`);
+								});
+							}
+							term.print(outputBuffer.join('\n'));
+						};
+						const masterInputHandler = (e) => {
+							if (e.altKey && e.key.toLowerCase() === 'q') { e.preventDefault(); e.stopImmediatePropagation(); exitGame("Tetris avsluttet av bruker."); return; }
+							e.stopImmediatePropagation();
+							switch (gameState) {
+								case 'start': e.preventDefault(); gameState = 'playing'; runGame(); break;
+								case 'playing':
+									if (['ArrowLeft', 'ArrowRight', 'ArrowDown', 'ArrowUp', ' '].includes(e.key)) e.preventDefault();
+									if (e.key === 'ArrowLeft') {
+										if (!checkCollision(currentPiece.shape, currentPiece.x - 1, currentPiece.y)) currentPiece.x--;
+									} else if (e.key === 'ArrowRight') {
+										if (!checkCollision(currentPiece.shape, currentPiece.x + 1, currentPiece.y)) currentPiece.x++;
+									} else if (e.key === 'ArrowDown') {
+										if (!checkCollision(currentPiece.shape, currentPiece.x, currentPiece.y + 1)) { currentPiece.y++; score += 1; } else { lockPiece(); clearLines(); spawnPiece(); }
+									} else if (e.key === 'ArrowUp') {
+										rotatePiece();
+									} else if (e.key === ' ') { const ghostY = getGhostPosition(); score += (ghostY - currentPiece.y) * 2; currentPiece.y = ghostY; lockPiece(); clearLines(); spawnPiece(); }
+									draw(); break;
+							}
+						};
+						const showStartScreen = () => {
+							term.clear();
+							term.print("=== TETRIS ===", { color: COLORS.SCORE_TEXT });
+							term.print("Kontroller:\n  Venstre/Høyre: Flytt\n  Opp: Roter\n  Ned: Mykt fall\n  Mellomrom: Hardt fall\n  Alt+Q: Tvangsavslutt\n");
+							term.print("Topp 10 rekorder:");
+							const highScores = getHighScores();
+							if (highScores.length === 0) { term.print("  Ingen rekorder enda. Bli den første!"); }
+							else { highScores.forEach((s, i) => term.print(`${(i + 1).toString().padStart(2)}. ${s.score.toString().padStart(6, ' ')} (${s.date})`)); }
+							term.print("\nTrykk en tast for å starte...");
+						};
+						const runGame = () => {
+							board = createEmptyBoard(); score = 0; lines = 0; gameOver = false;
+							const firstType = PIECE_TYPES[Math.floor(Math.random() * PIECE_TYPES.length)];
+							nextPiece = { shape: PIECES[firstType], x: Math.floor(BOARD_WIDTH / 2) - 1, y: 0 };
+							spawnPiece();
+							let lastTime = 0; let dropCounter = 0;
+							const gameLoop = (time = 0) => {
+								if (gameOver) {
+									saveHighScore(score);
+									terminal.print(`\n<span style='color: ${COLORS.GAME_OVER};'>Spillet er over!</span>`);
+									terminal.print("For å spille igjen, skriv 'tetris' og trykk Enter.");
+									cancelAnimationFrame(gameLoopId);
+									document.removeEventListener('keydown', masterInputHandler, { capture: true });
+									inputLine.style.display = 'flex';
+									resolve(); return;
+								}
+								const deltaTime = time - lastTime; lastTime = time; dropCounter += deltaTime;
+								if (dropCounter > 1000) { if (checkCollision(currentPiece.shape, currentPiece.x, currentPiece.y + 1)) { lockPiece(); clearLines(); spawnPiece(); } else { currentPiece.y++; } dropCounter = 0; }
+								draw();
+								gameLoopId = requestAnimationFrame(gameLoop);
+							};
+							gameLoop();
+						};
+						inputLine.style.display = 'none';
+						document.addEventListener('keydown', masterInputHandler, { capture: true });
+						showStartScreen();
+					});
+				}
+			}
+		};
+		SystemPrograms.push(tetrisProgram);
+		// -------- SLUTT PROGRAM: TETRIS --------
+		// -------- START PROGRAM: SNAKE --------
+		const snakeProgram = {
+			name: 'snake',
+			program: {
+				description: 'Et klassisk slangespill. Farten øker!',
+				execute: async (term) => {
+					return new Promise(resolve => {
+						const BOARD_WIDTH = 25, BOARD_HEIGHT = 18, SCORES_KEY = 'webdos_snake_highscores';
+						const COLORS = { BORDER: 'var(--green-4)', SCORE_TEXT: 'var(--green-6)', SNAKE_HEAD: 'var(--green-7)', SNAKE_BODY: 'var(--green-5)', FOOD: 'var(--green-6)', GAME_OVER: 'var(--green-7)' };
+						const CHARS = { SNAKE_HEAD: '██', SNAKE_BODY: '▓▓', FOOD: '██' };
+						let snake, food, score, gameOver, direction, gameLoopId, gameState = 'start', gameSpeed;
+						const inputLine = document.querySelector('.input-line');
+						const getHighScores = () => { try { const scores = localStorage.getItem(SCORES_KEY); return scores ? JSON.parse(scores) : []; } catch (e) { return []; } };
+						const saveHighScore = (newScore) => { if (newScore === 0) return; const scores = getHighScores(); scores.push({ score: newScore, date: new Date().toLocaleDateString() }); scores.sort((a, b) => b.score - a.score); localStorage.setItem(SCORES_KEY, JSON.stringify(scores.slice(0, 10))); };
+						const exitGame = (message) => {
+							if (gameLoopId) clearTimeout(gameLoopId);
+							document.removeEventListener('keydown', masterInputHandler, { capture: true });
+							term.clear();
+							if (message) term.print(message);
+							inputLine.style.display = 'flex';
+							resolve();
+						};
+						const placeFood = () => {
+							while (true) {
+								food = { x: Math.floor(Math.random() * BOARD_WIDTH), y: Math.floor(Math.random() * BOARD_HEIGHT) };
+								if (!snake.some(segment => segment.x === food.x && segment.y === food.y)) break;
+							}
+						};
+						const initGame = () => {
+							snake = [{ x: Math.floor(BOARD_WIDTH / 2), y: Math.floor(BOARD_HEIGHT / 2) }];
+							direction = { x: 0, y: 0 };
+							score = 0;
+							gameOver = false;
+							gameSpeed = 150; // Startfart
+							gameState = 'playing';
+							placeFood();
+							gameLoop();
+						};
+						const draw = () => {
+							term.clear();
+							const outputBuffer = [];
+							outputBuffer.push(`<span style="color:${COLORS.BORDER}">╔${'══'.repeat(BOARD_WIDTH)}╗</span>`);
+							for (let y = 0; y < BOARD_HEIGHT; y++) {
+								let line = `<span style="color:${COLORS.BORDER}">║</span>`;
+								for (let x = 0; x < BOARD_WIDTH; x++) {
+									const isHead = snake[0].x === x && snake[0].y === y;
+									const isBody = snake.slice(1).some(seg => seg.x === x && seg.y === y);
+									const isFood = food.x === x && food.y === y;
+									if (isHead) line += `<span style="color:${COLORS.SNAKE_HEAD}">${CHARS.SNAKE_HEAD}</span>`;
+									else if (isBody) line += `<span style="color:${COLORS.SNAKE_BODY}">${CHARS.SNAKE_BODY}</span>`;
+									else if (isFood) line += `<span style="color:${COLORS.FOOD}">${CHARS.FOOD}</span>`;
+									else line += '  ';
+								}
+								line += `<span style="color:${COLORS.BORDER}">║</span>`;
+								outputBuffer.push(line);
+							}
+							outputBuffer.push(`<span style="color:${COLORS.BORDER}">╚${'══'.repeat(BOARD_WIDTH)}╝</span>`);
+							outputBuffer.push(`<span style="color:${COLORS.SCORE_TEXT}">  Poeng: ${score} | Fart: ${((150 / gameSpeed - 1) * 100 + 100).toFixed(0)}%</span>`);
+							term.print(outputBuffer.join('\n'));
+						};
+						const masterInputHandler = (e) => {
+							if (e.altKey && e.key.toLowerCase() === 'q') { e.preventDefault(); e.stopImmediatePropagation(); exitGame("Snake avsluttet av bruker."); return; }
+							e.stopImmediatePropagation(); e.preventDefault();
+							if (gameState === 'start') { initGame(); return; }
+							if (gameState === 'playing') {
+								switch (e.key) {
+									case 'ArrowUp': if (direction.y === 0) direction = { x: 0, y: -1 }; break;
+									case 'ArrowDown': if (direction.y === 0) direction = { x: 0, y: 1 }; break;
+									case 'ArrowLeft': if (direction.x === 0) direction = { x: -1, y: 0 }; break;
+									case 'ArrowRight': if (direction.x === 0) direction = { x: 1, y: 0 }; break;
+								}
+							}
+						};
+						const showStartScreen = () => {
+							term.clear();
+							term.print("=== SNAKE ===", { color: COLORS.SCORE_TEXT });
+							term.print("Kontroller:\n  Piltaster: Styr slangen\n  Alt+Q: Tvangsavslutt\n");
+							term.print("Topp 10 rekorder:");
+							const highScores = getHighScores();
+							if (highScores.length === 0) { term.print("  Ingen rekorder enda. Bli den første!"); }
+							else { highScores.forEach((s, i) => term.print(`${(i + 1).toString().padStart(2)}. ${s.score.toString().padStart(6, ' ')} (${s.date})`)); }
+							term.print("\nTrykk en tast for å starte...");
+						};
+						const gameLoop = () => {
+							if (gameOver) {
+								saveHighScore(score);
+								terminal.print(`\n<span style='color: ${COLORS.GAME_OVER};'>Spillet er over!</span>`);
+								terminal.print("For å spille igjen, skriv 'snake' og trykk Enter.");
+								document.removeEventListener('keydown', masterInputHandler, { capture: true });
+								inputLine.style.display = 'flex';
+								resolve(); return;
+							}
+							const head = { x: snake[0].x + direction.x, y: snake[0].y + direction.y };
+							if (head.x < 0 || head.x >= BOARD_WIDTH || head.y < 0 || head.y >= BOARD_HEIGHT) gameOver = true;
+							if (snake.slice(1).some(seg => seg.x === head.x && seg.y === head.y)) gameOver = true;
+							if (direction.x !== 0 || direction.y !== 0) {
+								snake.unshift(head);
+								if (head.x === food.x && head.y === food.y) {
+									score += 10;
+									gameSpeed = Math.max(40, gameSpeed * 0.97); // Øk farten!
+									placeFood();
+								} else {
+									snake.pop();
+								}
+							}
+							draw();
+							gameLoopId = setTimeout(gameLoop, gameSpeed);
+						};
+						inputLine.style.display = 'none';
+						document.addEventListener('keydown', masterInputHandler, { capture: true });
+						showStartScreen();
+					});
+				}
+			}
+		};
+		SystemPrograms.push(snakeProgram);
+		// -------- SLUTT PROGRAM: SNAKE --------
+		// -------- START PROGRAM: IDIOT --------
+		const idiotProgram = {
+			name: 'idiot',
+			program: {
+				description: 'Det klassiske kortspillet Idiot. Bli kvitt kortene!',
+				execute: async (term) => {
+					return new Promise(resolve => {
+						const PLAYER_NAME = "Deg", AI_NAME = "Maskinen", CARD_RANKS = { '3': 1, '4': 2, '5': 3, '6': 4, '7': 5, '8': 6, '9': 7, 'J': 8, 'Q': 9, 'K': 10, 'A': 11, '2': 12, '10': 13 };
+						let gameState = {};
+						const inputLine = document.querySelector('.input-line');
+						const getCardValue = (card) => (card ? card.slice(0, -1) : ''), getCardRank = (card) => card ? CARD_RANKS[getCardValue(card)] || 0 : 0, sortCards = (cards) => cards.sort((a, b) => getCardRank(a) - getCardRank(b));
+						const createNewGame = () => {
+							const suits = ['H', 'D', 'C', 'S'], values = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+							let deck = [];
+							for (const suit of suits) { for (const value of values) { deck.push(value + suit); } }
+							for (let i = deck.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1));[deck[i], deck[j]] = [deck[j], deck[i]]; }
+							gameState = {
+								players: {
+									[PLAYER_NAME]: { name: PLAYER_NAME, hand: sortCards(deck.splice(0, 3)), faceUp: sortCards(deck.splice(0, 3)), faceDown: deck.splice(0, 3) },
+									[AI_NAME]: { name: AI_NAME, hand: sortCards(deck.splice(0, 3)), faceUp: sortCards(deck.splice(0, 3)), faceDown: deck.splice(0, 3) },
+								},
+								deck: deck, discardPile: [], turn: PLAYER_NAME, winner: null, gameInProgress: true, statusMessage: `Spillet har startet. Det er din tur!`
+							};
+						};
+						const switchTurn = () => {
+							if (gameState.winner) return;
+							gameState.turn = gameState.turn === PLAYER_NAME ? AI_NAME : PLAYER_NAME;
+							gameState.statusMessage = `Det er ${gameState.players[gameState.turn].name} sin tur.`;
+							draw();
+							if (gameState.turn === AI_NAME) setTimeout(aiTurn, 1200);
+						};
+						const drawCards = (player) => {
+							const p = gameState.players[player];
+							while (p.hand.length < 3 && gameState.deck.length > 0) p.hand.push(gameState.deck.pop());
+							sortCards(p.hand);
+						};
+						const checkWinCondition = (player) => {
+							const p = gameState.players[player];
+							if (p.hand.length === 0 && p.faceUp.length === 0 && p.faceDown.length === 0) {
+								gameState.winner = player; gameState.gameInProgress = false; return true;
+							}
+							return false;
+						};
+						const checkFourOfAKind = () => { if (gameState.discardPile.length < 4) return false; const topFour = gameState.discardPile.slice(-4); return topFour.every(c => getCardValue(c) === getCardValue(topFour[0])); };
+						const burnPile = (player) => {
+							gameState.statusMessage = `${gameState.players[player].name} brente bunken! Ny tur.`;
+							draw();
+							setTimeout(() => {
+								gameState.discardPile = [];
+								drawCards(player);
+								if (checkWinCondition(player)) { endGame(); return; }
+								draw();
+								if (player === AI_NAME) setTimeout(aiTurn, 1000);
+							}, 800);
+						};
+						const processMove = (player, card, sourcePile) => {
+							const source = gameState.players[player][sourcePile];
+							const index = source.indexOf(card);
+							if (index > -1) source.splice(index, 1);
+							gameState.discardPile.push(card);
+							gameState.statusMessage = `${gameState.players[player].name} spilte ${formatCard(card)}.`;
+							if (checkWinCondition(player)) { endGame(); return; }
+							if (checkFourOfAKind()) { burnPile(player); return; }
+							const cardValue = getCardValue(card);
+							if (cardValue === '10') { burnPile(player); return; }
+							if (cardValue === '2') { gameState.statusMessage = `Bunken ble nullstilt.`; }
+							drawCards(player);
+							if (checkWinCondition(player)) { endGame(); return; }
+							switchTurn();
+						};
+						const getEffectiveTopCard = () => { for (let i = gameState.discardPile.length - 1; i >= 0; i--) { if (getCardValue(gameState.discardPile[i]) !== '2') return gameState.discardPile[i]; } return null; };
+						const checkMoveLegality = (cardToPlay) => {
+							const cardValue = getCardValue(cardToPlay);
+							if (cardValue === '2' || cardValue === '10' || gameState.discardPile.length === 0) return true;
+							const effectiveTopCard = getEffectiveTopCard();
+							if (!effectiveTopCard) return true;
+							return getCardRank(cardToPlay) >= getCardRank(effectiveTopCard);
+						};
+						const playerPicksUpPile = (player) => {
+							if (gameState.discardPile.length === 0) { switchTurn(); return; }
+							const p = gameState.players[player];
+							p.hand.push(...gameState.discardPile);
+							sortCards(p.hand);
+							gameState.discardPile = [];
+							gameState.statusMessage = `${p.name} tok opp bunken.`;
+							switchTurn();
+						};
+						const handlePlayerMove = (card, sourcePile) => {
+							if (sourcePile !== 'faceDown' && !checkMoveLegality(card)) {
+								gameState.statusMessage = "Ugyldig trekk! Spill et høyere kort eller ta bunken.";
+								draw(); return;
+							}
+							if (sourcePile === 'faceDown') {
+								if (checkMoveLegality(card)) {
+									gameState.statusMessage = `Du spilte ${formatCard(card)} i blinde... Gyldig!`;
+									processMove(PLAYER_NAME, card, 'faceDown');
+								} else {
+									gameState.statusMessage = `Du spilte ${formatCard(card)} i blinde... Uflaks!`;
+									const source = gameState.players[PLAYER_NAME].faceDown;
+									const index = source.indexOf(card); if (index > -1) source.splice(index, 1);
+									gameState.discardPile.push(card);
+									draw();
+									setTimeout(() => playerPicksUpPile(PLAYER_NAME), 800);
+								}
+							} else {
+								processMove(PLAYER_NAME, card, sourcePile);
+							}
+						};
+						const aiTurn = () => {
+							if (gameState.turn !== AI_NAME || !gameState.gameInProgress) return;
+							const ai = gameState.players[AI_NAME];
+							const playableFrom = ai.hand.length > 0 ? 'hand' : ai.faceUp.length > 0 ? 'faceUp' : 'faceDown';
+							const cardOptions = ai[playableFrom];
+							if (playableFrom === 'faceDown') {
+								const cardToPlay = cardOptions[0];
+								gameState.statusMessage = `${AI_NAME} spiller i blinde...`; draw();
+								setTimeout(() => {
+									if (checkMoveLegality(cardToPlay)) { processMove(AI_NAME, cardToPlay, 'faceDown'); } else {
+										const source = gameState.players[AI_NAME].faceDown; const index = source.indexOf(cardToPlay); if (index > -1) source.splice(index, 1);
+										gameState.discardPile.push(cardToPlay);
+										playerPicksUpPile(AI_NAME);
+									}
+								}, 500); return;
+							}
+							const legalMoves = cardOptions.filter(checkMoveLegality);
+							if (legalMoves.length === 0) { playerPicksUpPile(AI_NAME); return; }
+							const tens = legalMoves.filter(c => getCardValue(c) === '10'); if (tens.length > 0 && gameState.discardPile.length >= 5) { processMove(AI_NAME, tens[0], playableFrom); return; }
+							let normalMoves = legalMoves.filter(c => !['2', '10'].includes(getCardValue(c))); if (normalMoves.length > 0) { processMove(AI_NAME, normalMoves[0], playableFrom); return; }
+							processMove(AI_NAME, legalMoves[0], playableFrom);
+						};
+						const formatCard = (cardStr) => {
+							if (!cardStr) return '[  ]';
+							const suitSymbols = { H: '♥', D: '♦', C: '♣', S: '♠' };
+							const value = getCardValue(cardStr).padEnd(2);
+							const suit = suitSymbols[cardStr.slice(-1)];
+							return `[${value}${suit}]`;
+						};
+						const draw = () => {
+							term.clear();
+							const p = gameState.players[PLAYER_NAME], ai = gameState.players[AI_NAME];
+							let out = [];
+							out.push(`${AI_NAME} (Hånd: ${ai.hand.length}, Synlige: ${ai.faceUp.length}, Skjulte: ${ai.faceDown.length})`);
+							out.push(`  Synlige: ${ai.faceUp.map(formatCard).join(' ')}`);
+							out.push(`  Skjulte: ${ai.faceDown.map(() => '[??]').join(' ')}`);
+							out.push('');
+							out.push('─'.repeat(50));
+							const topCard = gameState.discardPile.length > 0 ? formatCard(gameState.discardPile[gameState.discardPile.length - 1]) : '[  ]';
+							out.push(`Kortstokk: ${gameState.deck.length > 0 ? '[??]' : '[  ]'} (${gameState.deck.length})     Bunke: ${topCard} (${gameState.discardPile.length})`);
+							out.push('─'.repeat(50));
+							out.push('');
+							const activePile = p.hand.length > 0 ? p.hand : p.faceUp.length > 0 ? p.faceUp : p.faceDown;
+							let handStr;
+							if (p.hand.length > 0) handStr = `Din hånd:`; else if (p.faceUp.length > 0) handStr = `Dine synlige kort:`; else handStr = `Dine skjulte kort:`;
+							out.push(`${PLAYER_NAME} (Din tur!)`);
+							out.push(`  Synlige: ${p.faceUp.map(formatCard).join(' ')}`);
+							out.push(`  Skjulte: ${p.faceDown.map(() => '[??]').join(' ')}`);
+							out.push(`${handStr} ${activePile.map((c, i) => `${i + 1}:${p.hand.length > 0 || p.faceUp.length > 0 ? formatCard(c) : '[??]'}`).join('  ')}`);
+							out.push('');
+							out.push('');
+							out.push(`Status: ${gameState.statusMessage}`);
+							let controls = `Kontroller: Velg kort (1-${activePile.length})`;
+							const canPlay = activePile.some(checkMoveLegality) || activePile === p.faceDown;
+							if (!canPlay && gameState.discardPile.length > 0) controls += ", (T)a bunken";
+							controls += ', (Alt+Q) Avslutt';
+							out.push(controls);
+							term.print(out.join('\n'));
+						};
+						const endGame = () => {
+							gameState.statusMessage = gameState.winner === PLAYER_NAME ? `🎉 DU VANT! ${AI_NAME} er Idioten!` : `😭 DU TAPTE! Du er Idioten!`;
+							draw();
+							setTimeout(() => { term.print("\nSkriv 'idiot' for å spille igjen."); exitGame(); }, 2000);
+						};
+						const exitGame = () => {
+							document.removeEventListener('keydown', masterInputHandler, { capture: true });
+							inputLine.style.display = 'flex';
+							resolve();
+						};
+						const masterInputHandler = (e) => {
+							if (!gameState.gameInProgress || (gameState.turn !== PLAYER_NAME)) return;
+							if (e.altKey && e.key.toLowerCase() === 'q') { e.preventDefault(); e.stopImmediatePropagation(); exitGame("Idiot avsluttet av bruker."); return; }
+							e.preventDefault(); e.stopImmediatePropagation();
+							const p = gameState.players[PLAYER_NAME];
+							const activePile = p.hand.length > 0 ? p.hand : p.faceUp.length > 0 ? p.faceUp : p.faceDown;
+							const activePileName = p.hand.length > 0 ? 'hand' : p.faceUp.length > 0 ? 'faceUp' : 'faceDown';
+							if (!isNaN(e.key) && e.key > 0 && e.key <= activePile.length) {
+								const cardToPlay = activePile[parseInt(e.key) - 1];
+								handlePlayerMove(cardToPlay, activePileName);
+							} else if (e.key.toLowerCase() === 't') {
+								if (!activePile.some(checkMoveLegality) && gameState.discardPile.length > 0) { playerPicksUpPile(PLAYER_NAME); }
+							}
+						};
+						const showStartScreen = () => {
+							term.clear();
+							term.print("=== IDIOT KORTSPILL ===");
+							term.print("Mål: Bli den første til å kvitte deg med alle kort.\n");
+							term.print("Regler: Spill likt eller høyere. 2 nullstiller, 10 brenner bunken.");
+							term.print("Kontroller:\n  Talltaster: Velg kort å spille\n  T: Ta opp bunken\n  Alt+Q: Avslutt spillet\n");
+							term.print("Trykk en tast for å starte...");
+							document.addEventListener('keydown', function startHandler(e) {
+								e.preventDefault(); e.stopImmediatePropagation(); this.removeEventListener('keydown', startHandler);
+								inputLine.style.display = 'none';
+								document.addEventListener('keydown', masterInputHandler, { capture: true });
+								createNewGame();
+								draw();
+							}, { once: true });
+						};
+						showStartScreen();
+					});
+				}
+			}
+		};
+		SystemPrograms.push(idiotProgram);
+		// -------- SLUTT PROGRAM: IDIOT --------
+
+// -------- START PROGRAM: BREAKOUT --------
+const breakoutProgram = {
+    name: 'breakout',
+    program: {
+        description: 'Knus blokker med ballen i denne arkadeklassikeren.',
+        execute: async (term) => {
+            return new Promise(resolve => {
+                // --- SPILL-KONFIGURASJON ---
+                const WIDTH = 50, HEIGHT = 24;
+                const PADDLE_WIDTH = 10;
+                const BRICK_COLORS = ['var(--green-3)', 'var(--green-4)', 'var(--green-5)', 'var(--green-6)'];
+
+                // --- SPILLVARIABLER ---
+                let paddle, ball, bricks, score, lives, gameState;
+                let keys = {};
+
+                const initGame = () => {
+                    gameState = 'running';
+                    score = 0;
+                    lives = 3;
+                    paddle = { x: (WIDTH - PADDLE_WIDTH) / 2 };
+                    resetBall();
+                    createBricks();
+                    document.addEventListener('keydown', handleKeyDown);
+                    document.addEventListener('keyup', handleKeyUp);
+                    gameLoop();
+                };
+
+                const resetBall = () => {
+                    ball = {
+                        x: WIDTH / 2,
+                        y: HEIGHT - 3,
+                        dx: Math.random() > 0.5 ? 0.5 : -0.5, // Tilfeldig start-retning
+                        dy: -0.25 // Alltid oppover
+                    };
+                };
+
+                const createBricks = () => {
+                    bricks = [];
+                    const brickRows = 4;
+                    const brickCols = 10;
+                    const brickWidth = WIDTH / brickCols;
+                    for (let r = 0; r < brickRows; r++) {
+                        for (let c = 0; c < brickCols; c++) {
+                            bricks.push({
+                                x: c * brickWidth,
+                                y: r + 2,
+                                width: brickWidth,
+                                alive: true,
+                                color: BRICK_COLORS[r % BRICK_COLORS.length]
+                            });
+                        }
+                    }
+                };
+
+                const handleKeyDown = (e) => { keys[e.key] = true; };
+                const handleKeyUp = (e) => { keys[e.key] = false; };
+
+                const update = () => {
+                    if (gameState !== 'running') return;
+
+                    // Oppdater posisjonen til håven
+                    if (keys['ArrowLeft'] && paddle.x > 0) paddle.x -= 1;
+                    if (keys['ArrowRight'] && paddle.x < WIDTH - PADDLE_WIDTH) paddle.x += 1;
+
+                    // Oppdater posisjonen til ballen
+                    ball.x += ball.dx;
+                    ball.y += ball.dy;
+
+                    // Kollisjon med vegger (venstre/høyre/topp)
+                    if (ball.x <= 0 || ball.x >= WIDTH - 1) ball.dx *= -1;
+                    if (ball.y <= 0) ball.dy *= -1;
+
+                    // Kollisjon med bunnen (miste liv)
+                    if (ball.y >= HEIGHT - 1) {
+                        lives--;
+                        if (lives <= 0) {
+                            gameState = 'gameOver';
+                        } else {
+                            resetBall();
+                        }
+                    }
+
+                    // Kollisjon med håven
+                    const ballX = Math.floor(ball.x);
+                    const paddleX = Math.floor(paddle.x);
+                    if (Math.floor(ball.y) === HEIGHT - 2 && ballX >= paddleX && ballX < paddleX + PADDLE_WIDTH) {
+                        ball.dy *= -1;
+                        // Endre vinkel basert på hvor på håven ballen treffer
+                        let hitPos = (ball.x - (paddle.x + PADDLE_WIDTH / 2)) / (PADDLE_WIDTH / 2);
+                        ball.dx = hitPos; // hitPos er mellom -1 og 1
+                    }
+
+                    // Kollisjon med blokker
+                    for (const brick of bricks) {
+                        if (brick.alive && Math.floor(ball.y) === Math.floor(brick.y) && Math.floor(ball.x) >= brick.x && Math.floor(ball.x) < brick.x + brick.width) {
+                            brick.alive = false;
+                            ball.dy *= -1;
+                            score += 10;
+                        }
+                    }
+
+                    // Sjekk om spillet er vunnet
+                    if (bricks.every(b => !b.alive)) {
+                        gameState = 'win';
+                    }
+                };
+
+                const draw = () => {
+                    term.clear();
+                    let grid = Array.from({ length: HEIGHT }, () => Array(WIDTH).fill(' '));
+
+                    // Tegn blokker
+                    for (const brick of bricks) {
+                        if (brick.alive) {
+                            for (let i = 0; i < Math.floor(brick.width); i++) {
+                                grid[Math.floor(brick.y)][Math.floor(brick.x) + i] = `<span style="color:${brick.color}">▓</span>`;
+                            }
+                        }
+                    }
+
+                    // Tegn håv
+                    for (let i = 0; i < PADDLE_WIDTH; i++) {
+                        grid[HEIGHT - 2][Math.floor(paddle.x) + i] = '▀';
+                    }
+
+                    // Tegn ball
+                    grid[Math.floor(ball.y)][Math.floor(ball.x)] = 'O';
+
+                    let output = grid.map(row => row.join('')).join('\n');
+                    output += `\nPoeng: ${score} | Liv igjen: ${'♥'.repeat(lives)}`;
+
+                    if (gameState === 'gameOver') {
+                        output += "\n\n  GAME OVER!";
+                    } else if (gameState === 'win') {
+                        output += "\n\n  DU VANT! GRATULERER!";
+                    }
+
+                    term.print(output);
+                };
+
+                const gameLoop = () => {
+                    if (gameState === 'gameOver' || gameState === 'win') {
+                        draw(); // Siste tegning for å vise slutt-melding
+                        exitGame();
+                        return;
+                    }
+                    update();
+                    draw();
+                    requestAnimationFrame(gameLoop);
+                };
+
+                const exitGame = () => {
+                    document.removeEventListener('keydown', handleKeyDown);
+                    document.removeEventListener('keyup', handleKeyUp);
+                    term.print("\nFor å spille igjen, skriv 'breakout' og trykk Enter.");
+                    document.querySelector('.input-line').style.display = 'flex';
+                    resolve();
+                };
+
+                const masterInputHandler = (e) => {
+                    if (e.altKey && e.key.toLowerCase() === 'q') {
+                        e.preventDefault(); e.stopImmediatePropagation();
+                        // Trick for å stoppe gameloop fra utsiden
+                        gameState = 'exit';
+                        exitGame();
+                    }
+                };
+
+                const showStartScreen = () => {
+                    term.clear();
+                    term.print("=== BREAKOUT ===");
+                    term.print("Knus alle blokkene med ballen for å vinne.\n");
+                    term.print("Kontroller:\n  Venstre/Høyre Pil: Styr håven\n  Alt+Q: Avslutt spillet\n");
+                    term.print("Trykk en tast for å starte...");
+
+                    document.addEventListener('keydown', function startHandler(e) {
+                        e.preventDefault(); e.stopImmediatePropagation();
+                        this.removeEventListener('keydown', startHandler);
+
+                        document.querySelector('.input-line').style.display = 'none';
+                        document.addEventListener('keydown', masterInputHandler, { capture: true });
+                        initGame();
+                    }, { once: true });
+                };
+
+                showStartScreen();
+            });
+        }
+    }
+};
+SystemPrograms.push(breakoutProgram);
+// -------- SLUTT PROGRAM: BREAKOUT --------
+
+// -------- START PROGRAM: EDIT --------
+const editProgram = {
+    name: 'edit',
+    program: {
+        description: 'En fullverdig tekst- og kode-editor med maler.',
+        execute: async (term) => {
+            return new Promise(resolve => {
+                const CONTAINER_ID = 'editor-container-dynamic';
+                const STYLE_ID = 'editor-style-dynamic';
+                const EDITOR_ID = 'editor-textarea-dynamic';
+                const SEARCH_MODAL_ID = 'search-modal-dynamic';
+
+                const shortcuts = [ { key: 'Ctrl + O', desc: 'Åpne fil' }, { key: 'Ctrl + S', desc: 'Lagre fil' }, { key: 'Alt + N', desc: 'Ny fil (med WEB-DOS mal)' }, { key: 'Alt + S', desc: 'Søk & erstatt' }, { key: 'Alt + P', desc: 'Forhåndsvis HTML' }, { key: 'Tab', desc: 'Innrykk' }, { key: 'Shift+Tab', desc: 'Fjern innrykk' }, { key: 'Alt + L', desc: 'Rens linjer' }, { key: 'Alt + Q', desc: 'Avslutt editor' } ];
+                term.print("--- Kode-editor Snarveier ---");
+                shortcuts.forEach(s => term.print(`${s.key.padEnd(15, ' ')}: ${s.desc}`));
+                term.print("\nTrykk en tast for å starte editoren...");
+
+                let hasUnsavedChanges = false;
+
+                const exitEditor = () => {
+                    document.removeEventListener('keydown', masterKeyHandler, true);
+                    window.removeEventListener('beforeunload', beforeUnloadHandler);
+                    document.getElementById(CONTAINER_ID)?.remove();
+                    document.getElementById(STYLE_ID)?.remove();
+                    document.querySelector('.input-line').style.display = 'flex';
+                    resolve();
+                };
+
+                const beforeUnloadHandler = (e) => { if(hasUnsavedChanges) { e.preventDefault(); e.returnValue = ''; } };
+                const masterKeyHandler = (e) => {
+                    const event = new CustomEvent('editor-global-keydown', { detail: e });
+                    document.dispatchEvent(event);
+                };
+
+                const setupAndRun = () => {
+                    document.querySelector('.input-line').style.display = 'none';
+
+                    const style = document.createElement('style');
+                    style.id = STYLE_ID;
+                    style.textContent = `#${CONTAINER_ID}{position:fixed;top:0;left:0;width:100%;height:100%;z-index:100}#${EDITOR_ID}{width:100%;height:100%;box-sizing:border-box;border:none;outline:none;resize:none;white-space:pre;overflow-wrap:normal;overflow:auto;background-color:var(--black);color:var(--green-6);font-family:'Menlo','Monaco','Courier New',monospace;font-size:16px;padding:10px;caret-color:var(--green-7)}.${SEARCH_MODAL_ID}-class{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:400px;background-color:var(--black);border:2px solid var(--green-5);color:var(--green-6);z-index:110;padding:20px;box-shadow:0 0 20px rgba(88,222,17,.3)}.editor-modal-close-btn{position:absolute;top:10px;right:15px;font-size:24px;color:var(--green-6);cursor:pointer;background:0 0;border:none}#${SEARCH_MODAL_ID} h2{margin-top:0;text-align:left}#${SEARCH_MODAL_ID} .input-group{margin-bottom:15px}#${SEARCH_MODAL_ID} label{display:block;margin-bottom:5px}#${SEARCH_MODAL_ID} #match-count{float:right;font-size:.8em;color:var(--green-4)}#${SEARCH_MODAL_ID} input{width:100%;background-color:var(--green-0);border:1px solid var(--green-5);color:var(--green-6);padding:5px;box-sizing:border-box}#${SEARCH_MODAL_ID} .button-group{display:flex;justify-content:space-between;gap:10px}#${SEARCH_MODAL_ID} button{flex-grow:1;background:0 0;border:1px solid var(--green-5);color:var(--green-5);padding:8px;cursor:pointer}#${SEARCH_MODAL_ID} button:hover{background-color:var(--green-5);color:var(--black)}`;
+                    document.head.appendChild(style);
+
+                    const container = document.createElement('div');
+                    container.id = CONTAINER_ID;
+                    container.innerHTML = `<textarea id="${EDITOR_ID}" spellcheck="false" autofocus></textarea><div id="${SEARCH_MODAL_ID}" class="${SEARCH_MODAL_ID}-class"><button id="search-close" class="editor-modal-close-btn">&times;</button><h2>Søk & erstatt</h2><div class="input-group"><label for="find-input">Søk: <span id="match-count"></span></label><input type="text" id="find-input"></div><div class="input-group"><label for="replace-input">Erstatt med:</label><input type="text" id="replace-input"></div><div class="button-group"><button id="find-next-btn">Finn neste</button><button id="replace-btn">Erstatt</button><button id="replace-all-btn">Erstatt alle</button></div></div>`;
+                    document.body.appendChild(container);
+
+                    initEditorLogic();
+                    document.addEventListener('keydown', masterKeyHandler, true);
+                    window.addEventListener('beforeunload', beforeUnloadHandler);
+                };
+
+                const initEditorLogic = () => {
+                    const editor = document.getElementById(EDITOR_ID);
+                    const searchModal = document.getElementById(SEARCH_MODAL_ID);
+                    const findInput = document.getElementById('find-input');
+                    let currentFileHandle = null;
+
+                    const newFile = () => {
+                        if (hasUnsavedChanges && !confirm("Ulagrede endringer vil gå tapt. Vil du fortsette?")) return;
+                        const template = `// -------- START PROGRAM: MITT_NYE_PROGRAM --------
+const mittNyeProgram = {
+    name: 'mittnavn',
+    program: {
+        description: 'En kort beskrivelse av programmet.',
+        execute: async (term) => {
+            return new Promise(resolve => {
+                // Her kan du programmere din nye app for WEB-DOS
+                term.print("Mitt nye program kjører!");
+
+                const exitProgram = () => {
+                    // Eventuell opprydding her
+                    resolve();
+                };
+
+                // For å avslutte med en gang (kan fjernes):
+                exitProgram();
+            });
+        }
+    }
+};
+SystemPrograms.push(mittNyeProgram);
+// -------- SLUTT PROGRAM: MITT_NYE_PROGRAM --------`;
+                        editor.value = template;
+                        currentFileHandle = null;
+                        hasUnsavedChanges = false;
+                        editor.focus();
+                        const cursorPos = template.indexOf('term.print');
+                        editor.setSelectionRange(cursorPos, cursorPos);
+                    };
+
+                    const saveFile = async () => { if (!currentFileHandle) { try { currentFileHandle = await window.showSaveFilePicker({ suggestedName: 'fil.txt' }); } catch (err) { return; } } try { const writable = await currentFileHandle.createWritable(); await writable.write(editor.value); await writable.close(); hasUnsavedChanges = false; } catch(err) { console.error(err); } };
+                    const openFile = async () => { if (hasUnsavedChanges && !confirm("Ulagrede endringer vil gå tapt. Vil du fortsette?")) return; try { const [fileHandle] = await window.showOpenFilePicker(); const file = await fileHandle.getFile(); editor.value = await file.text(); currentFileHandle = fileHandle; hasUnsavedChanges = false; } catch (err) {} };
+                    const previewCode = () => { const win = window.open(); win.document.write(editor.value); win.document.close(); };
+                    const cleanEmptyLines = () => { editor.value = editor.value.split('\n').map(l => l.trimEnd()).filter(l => l !== '').join('\n'); };
+                    const toggleSearch = () => { searchModal.style.display = searchModal.style.display === 'block' ? 'none' : 'block'; if(searchModal.style.display === 'block') findInput.focus(); else editor.focus(); };
+
+                    editor.addEventListener('input', () => { hasUnsavedChanges = true; });
+                    editor.addEventListener('keydown', e => {
+                        if (e.key === 'Tab') {
+                            e.preventDefault();
+                            document.execCommand('insertText', false, '  ');
+                        }
+                    });
+
+                    document.getElementById('search-close').addEventListener('click', toggleSearch);
+                    // (Logikk for andre søkeknapper må legges til her ved behov)
+
+                    document.addEventListener('editor-global-keydown', e => {
+                        const originalEvent = e.detail;
+                        if(searchModal.style.display === 'block') { if(originalEvent.key === 'Escape') toggleSearch(); return; }
+
+                        const isCtrl = originalEvent.ctrlKey || originalEvent.metaKey;
+                        const key = originalEvent.key.toLowerCase();
+                        if(isCtrl && key === 's') { originalEvent.preventDefault(); saveFile(); }
+                        if(isCtrl && key === 'o') { originalEvent.preventDefault(); openFile(); }
+                        if(originalEvent.altKey && key === 'n') { originalEvent.preventDefault(); newFile(); }
+                        if(originalEvent.altKey && key === 'p') { originalEvent.preventDefault(); previewCode(); }
+                        if(originalEvent.altKey && key === 'l') { originalEvent.preventDefault(); cleanEmptyLines(); }
+                        if(originalEvent.altKey && key === 's') { originalEvent.preventDefault(); toggleSearch(); }
+                    });
+                    editor.focus();
+                };
+
+                document.addEventListener('keydown', function startHandler(e) {
+                    e.preventDefault(); e.stopImmediatePropagation();
+                    setupAndRun();
+                }, { once: true });
+            });
+        }
+    }
+};
+SystemPrograms.push(editProgram);
+// -------- SLUTT PROGRAM: EDIT --------
+
+		// <--- SLUTT PÅ PROGRAMDEFINISJONER --->
+		// ===================================================================================
+		//
+		//  WEB-DOS KJERNSYSTEM
+		//  Denne koden håndterer terminalen, kommandoer og programlasting.
+		//  Du trenger vanligvis ikke å endre noe her.
+		//
+		// ===================================================================================
+		document.addEventListener('DOMContentLoaded', () => {
+			const terminalEl = document.getElementById('terminal');
+			const inputLine = document.querySelector('.input-line');
+			const inputBuffer = document.getElementById('input-buffer');
+			const commandHistory = [];
+			let historyIndex = -1;
+			let commandBuffer = '';
+			let isAppRunning = false;
+			// Bygg det endelige programobjektet fra biblioteket
+			const programs = {};
+			SystemPrograms.forEach(p => {
+				if (p && p.name && p.program) {
+					programs[p.name] = p.program;
+				}
+			});
+			const terminal = {
+				print: (message, options = {}) => {
+					const newLine = document.createElement('div');
+					if (options.commandText !== undefined) {
+						newLine.classList.add('output-line', 'input-line');
+						const promptSpan = document.createElement('span'); promptSpan.className = 'prompt'; promptSpan.textContent = message;
+						const commandSpan = document.createElement('span'); commandSpan.className = 'input-text'; commandSpan.textContent = options.commandText;
+						newLine.appendChild(promptSpan); newLine.appendChild(commandSpan);
+					} else {
+						newLine.classList.add('output-line');
+						newLine.innerHTML = message;
+						if (options.color && !message.includes('<span')) newLine.style.color = options.color;
+						if (options.backgroundColor) { newLine.style.backgroundColor = options.backgroundColor; newLine.style.padding = '0 0.5ch'; }
+					}
+					terminalEl.insertBefore(newLine, inputLine);
+				},
+				clear: () => {
+					terminalEl.querySelectorAll('.output-line').forEach(line => line.remove());
+				}
+			};
+			async function processCommand(command) {
+				const [cmd, ...args] = command.trim().split(' ');
+				const cmdLower = cmd.toLowerCase();
+				if (!cmdLower) return;
+				commandHistory.push(command);
+				historyIndex = commandHistory.length;
+				const aliases = { 'cls': 'cls', 'tøm': 'cls', 'hjelp': 'help', 'help': 'help', 'echo': 'echo', 'si': 'echo', 'dir': 'dir', 'ls': 'dir' };
+				const resolvedCmd = aliases[cmdLower] || cmdLower;
+				if (resolvedCmd in programs) {
+					isAppRunning = true;
+					try { await programs[resolvedCmd].execute(terminal, args); }
+					catch (error) { terminal.print(`Feil i '${cmdLower}': ${error.message}`); }
+					finally { isAppRunning = false; }
+					return;
+				}
+				switch (resolvedCmd) {
+					case 'cls': terminal.clear(); break;
+					case 'help':
+						terminal.print('Kjernekommandoer: cls, help, echo, dir');
+						terminal.print('Norske alias: tøm, hjelp, si, ls\n');
+						terminal.print('Skriv "dir" for å se en liste over tilgjengelige programmer.');
+						break;
+					case 'echo': terminal.print(args.join(' ')); break;
+case 'dir':
+				terminal.print('Innhold i C:\\\n');
+				// Henter nøklene OG sorterer dem alfabetisk
+				const programNames = Object.keys(programs).sort();
+				programNames.forEach(pName => {
+					const description = programs[pName].description || '';
+					terminal.print(`${pName.padEnd(15, ' ')}${description}`);
+				});
+				terminal.print(`\n\t${programNames.length} Program(mer)`);
+				break;
+					default: terminal.print(`Ugyldig kommando eller filnavn: '${cmd}'`);
+				}
+			}
+			function updateInput() {
+				inputBuffer.textContent = commandBuffer;
+				window.scrollTo(0, document.body.scrollHeight);
+			}
+			document.addEventListener('keydown', async (e) => {
+				if (isAppRunning) return;
+				if (['Enter', 'Backspace', 'ArrowUp', 'ArrowDown'].includes(e.key)) e.preventDefault();
+				if (e.key === 'Enter') {
+					terminal.print(`C:\\>`, { commandText: commandBuffer });
+					const commandToProcess = commandBuffer;
+					commandBuffer = '';
+					updateInput();
+					await processCommand(commandToProcess);
+				} else if (e.key === 'Backspace') {
+					commandBuffer = commandBuffer.slice(0, -1);
+				} else if (e.key === 'ArrowUp') {
+					if (historyIndex > 0) { historyIndex--; commandBuffer = commandHistory[historyIndex]; }
+				} else if (e.key === 'ArrowDown') {
+					if (historyIndex < commandHistory.length - 1) { historyIndex++; commandBuffer = commandHistory[historyIndex]; }
+					else { historyIndex = commandHistory.length; commandBuffer = ''; }
+				} else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
+					commandBuffer += e.key;
+				}
+				updateInput();
+			});
+			terminal.print('WEB-DOS [Versjon 1.0]');
+		});
+	</script>
+</body>
+
+</html>
